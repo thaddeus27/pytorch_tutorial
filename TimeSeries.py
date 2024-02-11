@@ -1,7 +1,5 @@
 import sys
-
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 import torch
@@ -9,36 +7,30 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
-# Load data
-df = pd.read_csv('PH_Raw_LR_Side_100a_76_1.trn',delimiter="\t")
-X = df.iloc[:, 1:-1].values  # Ignore the first column and exclude the last column
-y = df.iloc[:, -1].values  # The output column
 
-# Encode the output column
-encoder = LabelEncoder()
-y_encoded = encoder.fit_transform(y)
-num_classes = len(encoder.classes_)
+def load_dataset(file_path):
+    df = pd.read_csv(file_path, delimiter="\t")
+    X = df.iloc[:, 1:-1].values  # Ignore the first column and exclude the last column
+    y = df.iloc[:, -1].values  # The output column
+    encoder = LabelEncoder()
+    y_encoded = encoder.fit_transform(y)
+    num_classes = len(encoder.classes_)
+    return torch.tensor(X, dtype=torch.float32), torch.tensor(y_encoded, dtype=torch.long), num_classes
 
-# Split the dataset
-X_train, X_temp, y_train, y_temp = train_test_split(X, y_encoded, test_size=0.3, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
-# Convert to PyTorch tensors
-X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
-y_val_tensor = torch.tensor(y_val, dtype=torch.long)
-X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+# Load datasets
+X_train_tensor, y_train_tensor, num_classes_train = load_dataset('PH_Raw_LR_Side_100a_76_1.trn')
+X_val_tensor, y_val_tensor, _ = load_dataset('PH_Raw_LR_Side_100a_76_1.val')
+X_test_tensor, y_test_tensor, _ = load_dataset('PH_Raw_LR_Side_100a_76_1.prc')
+
+# Ensure num_classes is consistent across datasets
+num_classes = num_classes_train  # Assuming all datasets have the same classes
 
 # Create data loaders
 batch_size = 64
-train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
-val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+train_loader = DataLoader(TensorDataset(X_train_tensor, y_train_tensor), batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(TensorDataset(X_val_tensor, y_val_tensor), batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(TensorDataset(X_test_tensor, y_test_tensor), batch_size=batch_size, shuffle=False)
 
 
 class SimpleNN(nn.Module):
@@ -56,14 +48,15 @@ class SimpleNN(nn.Module):
 
 
 # Initialize the model
-input_size = X_train.shape[1]
+input_size = X_train_tensor.shape[1]
 model = SimpleNN(input_size, num_classes)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters())
 
-# Training loop
-num_epochs = 100
+# Training and validation loop
+num_epochs = 1000
 for epoch in tqdm(range(num_epochs), file=sys.stdout):
+    # Training
     model.train()
     running_loss = 0.0
     for X_batch, y_batch in train_loader:
